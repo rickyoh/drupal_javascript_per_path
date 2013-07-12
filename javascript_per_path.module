@@ -1,0 +1,147 @@
+<?php
+
+
+/**
+ * hook_menu
+ */
+function javascript_per_path_menu() {
+  $items = array();
+  
+   $items['admin/config/system/javascript_per_path'] = array(
+    'title' => t('Simple UI for managing javascript injection per path'),
+    'description' => t('Configure.'),
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('javascript_per_path_config_form'),
+    'access arguments' => array('administer site configuration'),
+  );
+  return $items;
+}
+
+function javascript_per_path_config_form($form, &$form_state) {
+  // We will have many fields with the same name, so we need to be able to
+  // access the form hierarchically.
+  $form['#tree'] = TRUE;
+
+  $form['description'] = array(
+    '#type' => 'item',
+    '#title' => t('A form with dynamically added new fields'),
+  );
+
+  $data = variable_get('javascript_per_path_tracking_scripts', array(''));	
+  
+  $form_state['num_items'] = 0;
+  if(count($data) > 0){
+  	$form_state['num_items'] = count($data) - 1;
+  }
+  
+  if(isset($form_state['add_another']) && ($form_state['add_another'] == true)){
+  	$form_state['num_items'] = $form_state['num_items'] + 1;
+  }
+  
+  $form['REQUEST_URI'] = array(
+        '#prefix' => '<div id="request-uri-holder">',
+    '#suffix' => '</div>',
+	);
+  
+  for ($i = 0; $i <= $form_state['num_items']; $i++) {
+    $form['REQUEST_URI'][$i] = array(
+      '#type' => 'fieldset',
+      '#title' => t('REQUEST_URI #@num', array('@num' => $i)),
+      '#collapsible' => TRUE,
+      '#collapsed' => FALSE,
+    );
+
+    $form['REQUEST_URI'][$i]['REQUEST_URI'] = array(
+      '#type' => 'textfield',
+      '#title' => t('REQUEST_URI'),
+      '#description' => t("Enter request url of the page to put this script on."),
+      '#size' => 20,
+      '#maxlength' => 20,
+      '#required' => TRUE,
+      '#default_value' => (isset($data[$i]['REQUEST_URI'])) ? $data[$i]['REQUEST_URI'] : '',
+    );
+
+    $form['REQUEST_URI'][$i]['javascript'] = array(
+      '#type' => 'textarea',
+      '#title' => t("Javascript to inject after <body> tag"),
+      '#description' => t('Do not include script tags and test the page after adding in your javascripts"'),
+      '#default_value' => (isset($data[$i]['javascript'])) ? $data[$i]['javascript'] : '',
+    );
+
+    $form['REQUEST_URI'][$i]['delete_item_'.$i]  = array(
+      '#name' => 'delete_item_'.$i,
+      '#type' => 'submit',
+      '#value' => t('Remove'),
+      '#submit' => array('javascript_per_path_config_form_remove_item'),
+      '#attributes' => array('item-pos' => array($i)),
+      '#limit_validation_errors' => array(),
+    );
+  
+	
+  }
+
+  $form['submit'] = array(
+    '#type' => 'submit',
+    '#value' => 'Submit',
+  );
+
+  // Adds "Add another name" button
+  $form['add_item'] = array(
+    '#type' => 'submit',
+    '#value' => t('Add another item'),
+    '#submit' => array('javascript_per_path_config_form_add_item'),
+  );
+
+  return $form;
+  
+}
+
+
+function javascript_per_path_config_form_add_item($form, &$form_state) {
+  $form_state['add_another'] = TRUE;
+  javascript_per_path_config_set_form_state($form, $form_state);
+
+}
+
+function javascript_per_path_config_form_remove_item($form, &$form_state) {
+
+	$index = str_replace('delete_item_', '', $form_state['triggering_element']['#name']);
+	$data = variable_get('javascript_per_path_tracking_scripts', array(''));	
+	if(is_numeric($index)){
+		unset($data[$index]);
+		unset($form['REQUEST_URI'][$index]);	
+		variable_set('javascript_per_path_tracking_scripts', array_values($data));
+	}
+	$form_state['input'] = array();
+	$form_state['values'] = array();
+	$form_state['rebuild'] = TRUE;	
+}
+
+
+function javascript_per_path_config_form_submit($form, &$form_state) {
+	$form_state['add_another'] = FALSE;
+	javascript_per_path_config_set_form_state($form, $form_state);
+}
+
+function javascript_per_path_config_set_form_state($form, &$form_state) {
+	$data = array();
+	if((isset($form_state['input']['REQUEST_URI']))  && (count($form_state['input']['REQUEST_URI']) > 0))
+	foreach($form_state['input']['REQUEST_URI'] as $item){
+		$data[] = array(
+				'REQUEST_URI'=> $item['REQUEST_URI'],
+				'javascript'=> $item['javascript'],			
+			);
+	}
+	variable_set('javascript_per_path_tracking_scripts', $data);
+	$form_state['rebuild'] = TRUE;	
+}
+
+
+function javascript_per_path_preprocess_page(&$vars){	
+	$data = variable_get('javascript_per_path_tracking_scripts', array());
+	foreach($data as $item){
+		if($item['REQUEST_URI'] == $_SERVER['REQUEST_URI']){
+			drupal_add_js($item['javascript'], array('type' => 'inline', 'scope' => 'footer', 'weight' => 5));
+		}
+	}
+}
